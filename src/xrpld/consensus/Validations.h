@@ -1052,11 +1052,10 @@ public:
     /**  Get trusted full validations for a specific ledger
 
          @param ledgerID The identifier of ledger of interest
-         @param seq The sequence number of ledger of interest
          @return Trusted validations associated with ledger
     */
     std::vector<WrappedValidationType>
-    getTrustedForLedger(ID const& ledgerID, Seq const& seq)
+    getTrustedForLedger(ID const& ledgerID)
     {
         std::vector<WrappedValidationType> res;
         std::lock_guard lock{mutex_};
@@ -1065,7 +1064,7 @@ public:
             ledgerID,
             [&](std::size_t numValidations) { res.reserve(numValidations); },
             [&](NodeID const&, Validation const& v) {
-                if (v.trusted() && v.full() && v.seq() == seq)
+                if (v.trusted() && v.full())
                     res.emplace_back(v.unwrap());
             });
 
