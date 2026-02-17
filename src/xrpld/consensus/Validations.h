@@ -886,7 +886,7 @@ public:
 
         // A ledger ahead of us is preferred regardless of whether it is
         // a descendant of our working ledger or it is on a different chain
-        if (preferred->seq > curr.seq())
+        if (preferred->seq < curr.seq())
             return std::make_pair(preferred->seq, preferred->id);
 
         // Only switch to earlier or same sequence number
