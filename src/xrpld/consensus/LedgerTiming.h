@@ -138,7 +138,7 @@ roundCloseTime(
     if (closeTime == time_point{})
         return closeTime;
 
-    closeTime += (closeResolution / 2);
+    // closeTime += (closeResolution / 2);
     return closeTime - (closeTime.time_since_epoch() % closeResolution);
 }
 
