@@ -204,7 +204,7 @@ NegativeUNLVote::buildScoreTable(
     for (int i = 0; i < FLAG_LEDGER_INTERVAL; ++i)
     {
         for (auto const& v : validations.getTrustedForLedger(
-                 ledgerAncestors[numAncestors - 1 - i], seq - 2 - i))
+                 ledgerAncestors[i+1], seq - 2 - i))
         {
             if (scoreTable.count(v->getNodeID()))
                 ++scoreTable[v->getNodeID()];
