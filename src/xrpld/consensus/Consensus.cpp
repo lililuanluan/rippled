@@ -153,7 +153,7 @@ checkConsensusReached(
     if (count_self)
     {
         ++agreeing;
-        ++total;
+        // ++total;
         CLOG(clog) << "agreeing and total adjusted: " << agreeing << ','
                    << total << ". ";
     }
