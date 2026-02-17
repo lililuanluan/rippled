@@ -1043,7 +1043,7 @@ public:
             ledgerID,
             [&](std::size_t) {},  // nothing to reserve
             [&](NodeID const&, Validation const& v) {
-                if (v.trusted() && v.full())
+                if (v.trusted())
                     ++count;
             });
         return count;
