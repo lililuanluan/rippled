@@ -797,7 +797,7 @@ Consensus<Adaptor>::peerProposalInternal(
             if (newPeerProp.proposeSeq() <=
                 peerPosIt->second.proposal().proposeSeq())
             {
-                return false;
+                // return false;
             }
         }
 
