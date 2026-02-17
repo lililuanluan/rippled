@@ -66,7 +66,7 @@ struct ConsensusParms
     std::chrono::seconds const validationVALID_EARLY = std::chrono::minutes{3};
 
     //! How long we consider a proposal fresh
-    std::chrono::seconds const proposeFRESHNESS = std::chrono::seconds{20};
+    std::chrono::seconds const proposeFRESHNESS = std::chrono::seconds{200};
 
     //! How often we force generating a new proposal to keep ours fresh
     std::chrono::seconds const proposeINTERVAL = std::chrono::seconds{12};
