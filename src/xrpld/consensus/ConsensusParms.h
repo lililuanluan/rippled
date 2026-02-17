@@ -153,7 +153,7 @@ struct ConsensusParms
         // late consensus starts after 85% time, and requires 70% yes
         {late, {85, 70, stuck}},
         // we're stuck after 2x time, requires 95% yes votes
-        {stuck, {200, 95, stuck}},
+        {stuck, {200, 40, stuck}},
     };
 
     //! Percentage of nodes required to reach agreement on ledger close time
