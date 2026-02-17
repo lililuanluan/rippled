@@ -120,7 +120,7 @@ public:
     {
         if (now > (when_ + p.validationSET_EXPIRES))
             seq_ = Seq{0};
-        if (s <= seq_)
+        if (s < seq_)
             return false;
         seq_ = s;
         when_ = now;
