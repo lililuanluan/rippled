@@ -588,7 +588,7 @@ RCLConsensus::Adaptor::doAccept(
         validating_ = ledgerMaster_.isCompatible(
             *built.ledger_, j_.warn(), "Not validating");
 
-    if (validating_ && !consensusFail &&
+    if (validating_ && 
         app_.getValidations().canValidateSeq(built.seq()))
     {
         validate(built, result.txns, proposing);
