@@ -133,6 +133,9 @@ class Xrpl(ConanFile):
     generators = 'CMakeDeps'
     def generate(self):
         tc = CMakeToolchain(self)
+        # Our Docker build mounts the source tree read-only, so Conan must not
+        # try to emit CMakeUserPresets.json next to CMakeLists.txt.
+        tc.user_presets_path = False
         tc.variables['tests'] = self.options.tests
         tc.variables['assert'] = self.options.assertions
         tc.variables['coverage'] = self.options.coverage

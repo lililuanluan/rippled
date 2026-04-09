@@ -23,6 +23,7 @@
 #include <xrpld/core/ConfigSections.h>
 #include <xrpld/core/TimeKeeper.h>
 #include <xrpld/net/RPCCall.h>
+#include <xrpld/core/LuanDebug.h>
 
 #include <xrpl/basics/Log.h>
 #include <xrpl/beast/core/CurrentThreadName.h>
@@ -789,6 +790,7 @@ run(int argc, char** argv)
         thresh = kTrace;
 
     auto logs = std::make_unique<Logs>(thresh);
+    gLuanLogs = logs.get();
 
     // No arguments. Run server.
     if (!vm.count("parameters"))
@@ -805,6 +807,9 @@ run(int argc, char** argv)
                    "be "
                 << "preceded by a \\";
         }
+
+        luan("hello, world!");
+        luan_j("hello world j!");
 
         // We want at least 1024 file descriptors. We'll
         // tweak this further.
