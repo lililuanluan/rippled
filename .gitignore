@@ -86,3 +86,6 @@ __pycache__
 
 # clangd cache
 /.cache
+
+.build-csf/
+compile_commands.json

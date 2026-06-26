@@ -19,6 +19,8 @@
 #include <boost/container/flat_set.hpp>
 
 #include <algorithm>
+#include <chrono>
+#include <cstddef>
 
 namespace xrpl::test::csf {
 
@@ -853,6 +855,32 @@ struct Peer
 
     //--------------------------------------------------------------------------
     // Simulation "driver" members
+
+    // 只调用一次hearbeat，不预订下一次，下一次通过外部手动指定
+    void
+    timerEntryOnce()
+    {
+        consensus.timerEntry(now());
+    }
+
+    void
+    fakeSetPreviousRound(std::chrono::milliseconds prevRoundTime_, std::size_t prevProposers_)
+    {
+        prevRoundTime = prevRoundTime_;
+        prevProposers = prevProposers_;
+        consensus.fakeSetPreviousRound(prevRoundTime_, prevProposers_);
+    }
+
+    void
+    fakeCloseLedger()
+    {
+        consensus.fakeCloseLedger(now());
+    }
+    void
+    fakeCloseLedger(NetClock::time_point const& closeTime)
+    {
+        consensus.fakeCloseLedger(closeTime);
+    }
 
     //! Heartbeat timer call
     void

@@ -143,3 +143,30 @@ if(tests)
     include(CTest)
     add_subdirectory(src/tests/libxrpl)
 endif()
+
+
+option(csf "Build standalone CSF experiment" ON)
+
+if(csf)
+    add_executable(csf
+        luan/main.cpp
+        src/test/csf/impl/Sim.cpp
+        src/test/csf/impl/ledgers.cpp
+        src/xrpld/consensus/Consensus.cpp
+    )
+
+    target_include_directories(
+        csf
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+
+    target_link_libraries(
+        csf
+        PRIVATE
+            Xrpl::boost
+            Xrpl::opts
+            Xrpl::libs
+            xrpl.libxrpl
+    )
+endif()

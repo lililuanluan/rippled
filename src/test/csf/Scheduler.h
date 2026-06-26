@@ -6,6 +6,7 @@
 #include <boost/container/pmr/monotonic_buffer_resource.hpp>
 #include <boost/intrusive/set.hpp>
 
+#include <cstdint>
 #include <type_traits>
 #include <utility>
 
@@ -38,6 +39,9 @@ private:
     struct Event : by_when_hook
     {
         time_point when;
+        // for events with same time point, compare their ordering (for deterministic reproduction
+        // purpose)
+        std::uint64_t order;
 
         Event(Event const&) = delete;
         Event&
@@ -49,14 +53,17 @@ private:
         virtual void
         operator()() const = 0;
 
-        Event(time_point when) : when(when)
+        Event(time_point when, std::uint64_t order) : when(when), order(order)
         {
         }
 
         bool
         operator<(Event const& other) const
         {
-            return when < other.when;
+            if (when != other.when)
+                return when < other.when;
+            // for same time point, compare order
+            return order < other.order;
         }
     };
 
@@ -72,8 +79,8 @@ private:
         operator=(EventImpl const&) = delete;
 
         template <class DeducedHandler>
-        EventImpl(time_point when, DeducedHandler&& h)
-            : Event(when), h_(std::forward<DeducedHandler>(h))
+        EventImpl(time_point when, std::uint64_t order, DeducedHandler&& h)
+            : Event(when, order), h_(std::forward<DeducedHandler>(h))
         {
         }
 
@@ -92,6 +99,7 @@ private:
         // alloc_ is owned by the scheduler
         boost::container::pmr::monotonic_buffer_resource* alloc_;
         by_when_set byWhen_;
+        std::uint64_t order_ = 0;  // event insert order
 
     public:
         using iterator = by_when_set::iterator;
@@ -291,7 +299,8 @@ Scheduler::QueueType::emplace(time_point when, Handler&& h) -> by_when_set::iter
 {
     using event_type = EventImpl<std::decay_t<Handler>>;
     auto const p = alloc_->allocate(sizeof(event_type));
-    auto& e = *new (p) event_type(when, std::forward<Handler>(h));
+    auto& e = *new (p) event_type(when, order_, std::forward<Handler>(h));
+    order_++;
     return byWhen_.insert(e);
 }
 

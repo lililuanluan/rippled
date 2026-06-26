@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstddef>
 #include <deque>
 #include <optional>
 #include <sstream>
@@ -365,6 +366,13 @@ public:
     timerEntry(
         NetClock::time_point const& now,
         std::unique_ptr<std::stringstream> const& clog = {});
+#ifdef TRACE_TEST
+    void
+    fakeSetPreviousRound(std::chrono::milliseconds prevRoundTime, std::size_t prevProposers);
+
+    void
+    fakeCloseLedger(NetClock::time_point const& now);
+#endif
 
     /** Process a transaction set acquired from the network
 
@@ -609,6 +617,29 @@ Consensus<Adaptor>::Consensus(clock_type const& clock, Adaptor& adaptor, beast::
 {
     JLOG(j_.debug()) << "Creating consensus object";
 }
+
+#ifdef TRACE_TEST
+
+template <class Adaptor>
+void
+Consensus<Adaptor>::fakeCloseLedger(NetClock::time_point const& now)
+{
+    now_ = now;
+    closeLedger({});
+}
+
+template <class Adaptor>
+void
+Consensus<Adaptor>::fakeSetPreviousRound(
+    std::chrono::milliseconds prevRoundTime,
+    std::size_t prevProposers)
+{
+    prevRoundTime_ = prevRoundTime;
+    prevProposers_ = prevProposers;
+    firstRound_ = false;
+}
+
+#endif
 
 template <class Adaptor>
 void
