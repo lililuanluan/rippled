@@ -6,16 +6,21 @@
 #include "test/csf/Validation.h"
 #include "test/csf/events.h"
 
+#include "json.h"
 #include "trace.h"
 
 #include <cassert>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <map>
+#include <stdexcept>
 #include <string>
 #include <vector>
+
 using namespace xrpl::test::csf;
 using namespace std::chrono;
 
@@ -231,11 +236,204 @@ thresholdChange()
     }
 }
 
+void
+replay()
+{
+    auto cur = fs::path{__FILE__};
+
+    std::string const tracePath = cur.parent_path() / "trace.json";
+    auto trace = loadTrace(tracePath);
+    std::cout << "Loaded trace " << tracePath << ": nodes=" << trace.nodes.size()
+              << ", deliveries=" << trace.deliveries.size() << ", ticks=" << trace.ticks.size()
+              << ", expected_proposals=" << trace.expectedProposals.size() << std::endl;
+
+    Sim sim;
+    ProposalCollector collector;
+    sim.collectors.add(collector);
+
+    PeerGroup peers = sim.createGroup(trace.nodes.size());
+    peers.trust(peers);
+
+    // 节点id映射
+    auto peer = [&](std::uint32_t id) {
+        if (id >= peers.size())
+            throw std::runtime_error("trace peer id out of range: " + std::to_string(id));
+        Peer* p = peers[static_cast<std::size_t>(id)];
+        if (static_cast<std::uint32_t>(p->id) != id)
+            throw std::runtime_error(
+                "trace peer id does not match CSF PeerID: " + std::to_string(id));
+        return p;
+    };
+
+    // 创建争议交易
+    Tx const disputed{1};
+    TxSet hasTargetSet{TxSetType{disputed}};
+    TxSet noTargetSet{TxSetType{}};
+
+    // 注意！这里为了只复现transaction set consensus，不模拟closetime
+    // consensus，所以假设所有的节点close time都是一致的，这样就不需要反复投票在closetime上面了
+    // 但是触发进入establish的事件所指定的时间并不是这个closetime，而是从trace中提取出的时间戳
+    auto const replayCloseTime = peer(0)->now();
+
+    // 设置所有节点的前一轮相关时间状态，以及初始的txset
+    for (auto& n : trace.nodes)
+    {
+        auto* p = peer(n.id);
+        p->targetLedgers = 0;  // 关掉csf自动跑轮次的功能，我这里手动调度
+        p->fakeSetPreviousRound(std::chrono::milliseconds(n.prevRoundTimeMs), n.prevProposers);
+        // 调用handle，这里是将txset放进txSets里面，后面如果acquire可以直接拿到
+        // 在proposal中，只带position（即txset的hash），但是如果没有具体内容可以acquire的话就无法创建disputed
+        // set
+        p->handle(hasTargetSet);
+        p->handle(noTargetSet);
+        if (n.initialHasTarget)
+            p->openTxs.insert(disputed);
+    }
+
+    // scheduler的at提交的时间是绝对时间点，而trace中的时间是相对时间，所以要用前面的now()加上这个偏移时间
+    auto const replayStart = sim.scheduler.now();
+    auto scheduleAt = [&](std::int64_t atUs, auto&& f) {
+        sim.scheduler.at(
+            replayStart + std::chrono::microseconds(atUs), std::forward<decltype(f)>(f));
+    };
+
+    // 让所有节点都开始一轮并进入establish
+    for (auto&& n : trace.nodes)
+    {
+        scheduleAt(n.roundStartUs, [&]() { peer(n.id)->startRound(); });
+
+        scheduleAt(n.establishUs, [&]() { peer(n.id)->fakeCloseLedger(replayCloseTime); });
+    }
+
+    auto setFor = [&](bool hasTarget) -> TxSet const& {
+        return hasTarget ? hasTargetSet : noTargetSet;
+    };
+
+    // 下面注册消息接收事件
+    // 要接收这个proposal，首先这个proposal需要被发送过
+    // 那么就可以从collector的记录中先找到
+    // 虽然此时是在注册阶段，还没开始跑，但是这个注册的函数也是运行时执行，不是现在执行
+    // （返回指针需要显式指定类型，否则编译器会匹配到nullptr_t
+    auto findEmittedProposal = [&](ProposalDelivery const& delivery) -> Proposal const* {
+        auto const it =
+            collector.proposalShares.find(PeerID{delivery.sender});  // 找到这个节点的所有proposal
+        if (it == collector.proposalShares.end())
+        {
+            return nullptr;
+        }
+        for (auto const& shared : it->second)
+        {
+            // 当seq相同，且proposal的position（hash）相同的时候，这个proposal就找到了
+            auto const expectedPosition = setFor(delivery.hasTarget).id();
+            if (shared.val.proposeSeq() == delivery.proposalSeq &&
+                shared.val.position() == expectedPosition)
+            {
+                // 返回这个proposal的指针
+                return &shared.val;
+            }
+        }
+        // 如果没有找到，则返回null
+        return nullptr;
+    };
+    for (auto&& d : trace.deliveries)
+    {
+        scheduleAt(d.atUs, [&, d] {
+            // 这里需要值捕获，因为出了循环d就消失了
+            // 先在collector中找到这个proposal
+            if (auto const* emitted = findEmittedProposal(d))
+            {
+                peer(d.receiver)->handle(*emitted);  // handle ~ deliver
+            }
+            else
+            {
+                throw std::runtime_error(
+                    "when delivering proposals, couldn't find this proposal emitted");
+            }
+        });
+    }
+
+    // 下面注册tick事件，这是每个节点heartbeat的事件
+    // 其中，节点在heartbeat调用check consensus，需要根据其所见到的validation做决定
+    // 但是这里只需要知道有多少个节点以及moved-on（即已经发送了validation），所以只需要设置一个数量即可（我这个测试并没有switch
+    // ledger发生）
+    // 所以这里只需要看collector中有多少个sender发送了validation，如果比trace中要求的更充足，则直接设置值
+
+    for (auto&& t : trace.ticks)
+    {
+        scheduleAt(t.atUs, [&, t]() {
+            // 这里不能引用捕获t，因为出了这个循环t就没有了
+            // 先获取在这个节点tick的时候，collector已经收集到了哪些节点的validation
+            std::set<PeerID> possible_senders;
+            for (auto const& [sender, shares] : collector.validationShares)
+            {
+                if (shares.size() && sender != PeerID(t.node))
+                {
+                    possible_senders.insert(sender);
+                }
+            }
+            // 在trace中，会写出observed validated，如果这里不满足则报错
+            if (possible_senders.size() < t.observedValidated)
+            {
+                throw std::runtime_error("not enough validations sent at this moment");
+            }
+
+            // 现在已经满足有足够多的validation发出了，这里就不管具体的validation是谁了，直接设置状态
+            // TODO 这里可以改为选N个送达
+            Peer* p = peer(t.node);
+            p->setProposersFinishedOverride(t.observedValidated);
+            p->timerEntryOnce();
+            // 这里只是为了更改 proposersFinished返回值，不要污染状态
+            p->clearProposersFinishedOverride();
+        });
+    }
+
+    sim.scheduler.step();  // 把所有注册的事件执行掉
+
+    // ----------------- 做结果的检查 ---------------------------
+
+    for (auto&& node : trace.nodes)
+    {
+        auto const who = PeerID(node.id);
+        // 1，检查accepted ledger
+        auto aIt = collector.accepts.find(who);  // 找到这个节点对应的accept vector
+        if (aIt == collector.accepts.end() || aIt->second.empty())
+        {
+            throw std::runtime_error(
+                std::string("cannot find accepted ledger for node") + std::to_string(node.id));
+        }
+        auto const& acceptedLedger = aIt->second[0].ledger;
+        auto acceptedHasDisputed = acceptedLedger.txs().contains(disputed);
+        std::cout << "node: " << node.id << " accepted ledger " << acceptedLedger.id() << ", "
+                  << (acceptedHasDisputed ? "has_target" : "no_target") << std::endl;
+        if (acceptedHasDisputed == node.expectedHasTarget)
+        {
+            throw std::runtime_error("accepted ledger didn't match trace");
+        }
+        else
+        {
+            std::cout << "node: " << node.id << " accepted ledger " << acceptedLedger.id() << ", "
+                      << (acceptedHasDisputed ? "has_target" : "no_target") << std::endl;
+        }
+    }
+}
+
 int
-main()
+main(int argc, char** argv)
+try
 {
     // example();
     // transaction();
     // scheduler();
-    thresholdChange();
+    // thresholdChange();
+    replay();
+}
+catch (std::exception const& e)
+{
+    std::cerr << "ERROR: " << e.what() << std::endl;
+    return 1;
+}
+catch (...)
+{
+    std::cerr << "ERROR: unknown exception" << std::endl;
+    return 1;
 }

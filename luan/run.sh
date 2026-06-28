@@ -12,9 +12,15 @@ if [[ -f "${VENV_ACTIVATE}" ]]; then
   source "${VENV_ACTIVATE}"
 fi
 
+cd $SCRIPT_DIR
+python3 gen_trace.py G53T17 --out trace.json
+cd -
+
 JOBS=20
 
 mkdir -p "${BUILD_DIR}"
+
+
 
 conan install "${REPO_ROOT}" \
   --output-folder "${BUILD_DIR}" \
@@ -32,6 +38,8 @@ cmake -S "${REPO_ROOT}" -B "${BUILD_DIR}" \
 ln -sf "${BUILD_DIR}/compile_commands.json" "${REPO_ROOT}/compile_commands.json"
 
 cmake --build "${BUILD_DIR}" --config Release --target csf --parallel "${JOBS}"
+
+cd "${REPO_ROOT}"
 
 if [[ -x "${BUILD_DIR}/Release/csf" ]]; then
   exec "${BUILD_DIR}/Release/csf"
