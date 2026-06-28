@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstddef>
+#include <iterator>
 
 namespace xrpl::test::csf {
 
@@ -194,6 +195,9 @@ struct Peer
 
     //! Validations from trusted nodes
     Validations<ValAdaptor> validations;
+
+    //! override proposers finished
+    std::optional<std::size_t> proposersFinishedOverride;
 
     //! The most recent ledger that has been fully validated by the network from
     //! the perspective of this Peer
@@ -487,6 +491,10 @@ struct Peer
     std::size_t
     proposersFinished(Ledger const& prevLedger, Ledger::ID const& prevLedgerID)
     {
+        if (proposersFinishedOverride)
+        {
+            return *proposersFinishedOverride;
+        }
         return validations.getNodesAfter(prevLedger, prevLedgerID);
     }
 
@@ -861,6 +869,13 @@ struct Peer
     timerEntryOnce()
     {
         consensus.timerEntry(now());
+    }
+
+    void setProposersFinishedOverride(std::size_t count) {
+        proposersFinishedOverride = count;
+    }
+    void clearProposersFinishedOverride() {
+        proposersFinishedOverride.reset();
     }
 
     void
