@@ -393,6 +393,7 @@ replay()
 
     for (auto&& node : trace.nodes)
     {
+        std::cout << "--------------------------\n";
         auto const who = PeerID(node.id);
         // 1，检查accepted ledger
         auto aIt = collector.accepts.find(who);  // 找到这个节点对应的accept vector
@@ -403,16 +404,32 @@ replay()
         }
         auto const& acceptedLedger = aIt->second[0].ledger;
         auto acceptedHasDisputed = acceptedLedger.txs().contains(disputed);
-        std::cout << "node: " << node.id << " accepted ledger " << acceptedLedger.id() << ", "
-                  << (acceptedHasDisputed ? "has_target" : "no_target") << std::endl;
-        if (acceptedHasDisputed == node.expectedHasTarget)
+        if (acceptedHasDisputed != node.expectedHasTarget)
         {
             throw std::runtime_error("accepted ledger didn't match trace");
         }
         else
         {
-            std::cout << "node: " << node.id << " accepted ledger " << acceptedLedger.id() << ", "
+            std::cout << "[Accepted]\tnode " << node.id << " accepted ledger L"
+                      << acceptedLedger.id() << " = "
                       << (acceptedHasDisputed ? "has_target" : "no_target") << std::endl;
+        }
+
+        // 2，检查validation（注意accept不等于validate，还可能moveon）
+        auto vIt = collector.validationShares.find(who);
+        if (vIt == collector.validationShares.end() || aIt->second.empty())
+        {
+            std::cout << "[Validation]\tnode " << node.id << " didn't share validation"
+                      << std::endl;
+        }
+        else
+        {
+            auto const& validation =
+                vIt->second[0]
+                    .val;  // 注意这个val类似hash，没有具体的ledger信息，需要从之前的accept
+                           // ledger中找
+            std::cout << "[Validation]\tnode " << node.id << " validated L" << validation.ledgerID()
+                      << std::endl;
         }
     }
 }
