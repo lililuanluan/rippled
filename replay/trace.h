@@ -10,7 +10,7 @@
 // 一个节点的初始状态配置
 struct TraceNode
 {
-    std::uint32_t id;             // id
+    std::uint32_t id;               // id
     std::int64_t roundStartUs;      // 进入open phase的相对时间
     std::int64_t establishUs;       // 进入establish phase的相对时间
     std::uint32_t prevRoundTimeMs;  // 上一轮用时
@@ -53,7 +53,7 @@ struct TraceData
     std::vector<TraceNode> nodes;
     std::vector<ProposalDelivery> deliveries;
     std::vector<ExpectedProposal> expectedProposals;
-    std::vector<TimerTick> ticks;        // 节点的timerEntry事件
+    std::vector<TimerTick> ticks;  // 节点的timerEntry事件
 };
 
 namespace fs = std::filesystem;
@@ -116,8 +116,6 @@ loadTrace(std::string const& tracePath)
             get<std::uint32_t>(t, "node"),
             get<std::uint32_t>(t, "observed_validated"));
     }
-    
-
 
     return TraceData{
         std::move(traceNodes),

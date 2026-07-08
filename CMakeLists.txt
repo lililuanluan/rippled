@@ -149,7 +149,7 @@ option(csf "Build standalone CSF experiment" ON)
 
 if(csf)
     add_executable(csf
-        luan/main.cpp
+        replay/main.cpp
         src/test/csf/impl/Sim.cpp
         src/test/csf/impl/ledgers.cpp
         src/xrpld/consensus/Consensus.cpp
