@@ -13,7 +13,8 @@ if [[ -f "${VENV_ACTIVATE}" ]]; then
 fi
 
 cd $SCRIPT_DIR
-python3 gen_trace.py G53T17 --out trace.json
+python3 gen_trace.py G12T14 G12T14_trace.json
+python3 gen_trace.py G53T17 G53T17_trace.json   
 cd -
 
 JOBS=20
@@ -37,12 +38,17 @@ cmake -S "${REPO_ROOT}" -B "${BUILD_DIR}" \
 
 ln -sf "${BUILD_DIR}/compile_commands.json" "${REPO_ROOT}/compile_commands.json"
 
-cmake --build "${BUILD_DIR}" --config Release --target csf --parallel "${JOBS}"
+cmake --build "${BUILD_DIR}" --config Release --target txset --parallel "${JOBS}"
+cmake --build "${BUILD_DIR}" --config Release --target closetime --parallel "${JOBS}"
 
 cd "${REPO_ROOT}"
 
-if [[ -x "${BUILD_DIR}/Release/csf" ]]; then
-  exec "${BUILD_DIR}/Release/csf"
+if [[ -x "${BUILD_DIR}/txset" ]]; then
+  echo " === running txset consensus replay ==="
+  "${BUILD_DIR}/txset"
 fi
 
-exec "${BUILD_DIR}/csf"
+if [[ -x "${BUILD_DIR}/closetime" ]]; then
+  echo " === running closetime consensus replay ==="
+  "${BUILD_DIR}/closetime"
+fi  

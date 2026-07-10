@@ -6,6 +6,11 @@
 #include <xrpl/json/json_reader.h>
 #include <xrpl/json/json_value.h>
 
+#include <cstdint>
+#include <stdexcept>
+#include <string>
+#include <type_traits>
+
 json::Value const&
 get(json::Value const& obj, char const* key)
 {
@@ -44,6 +49,12 @@ get(json::Value const& obj, char const* key)
             return static_cast<std::int64_t>(value.asUInt());
         else
             throw std::runtime_error(std::string("JSON field must be int: ") + key);
+    }
+    else if constexpr (std::is_same_v<T, std::string>)
+    {
+        if (!value.isString())
+            throw std::runtime_error(std::string("JSON field must be string: ") + key);
+        return value.asString();
     }
     else
     {

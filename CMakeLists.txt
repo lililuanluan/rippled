@@ -148,21 +148,41 @@ endif()
 option(csf "Build standalone CSF experiment" ON)
 
 if(csf)
-    add_executable(csf
-        replay/main.cpp
+    add_executable(txset
+        replay/txset.cpp
+        src/test/csf/impl/Sim.cpp
+        src/test/csf/impl/ledgers.cpp
+        src/xrpld/consensus/Consensus.cpp
+    )
+
+    add_executable(closetime
+        replay/closetime.cpp
         src/test/csf/impl/Sim.cpp
         src/test/csf/impl/ledgers.cpp
         src/xrpld/consensus/Consensus.cpp
     )
 
     target_include_directories(
-        csf
+        txset
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/src
     )
 
+    target_include_directories(
+        closetime
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
     target_link_libraries(
-        csf
+            txset
+            PRIVATE
+                Xrpl::boost
+                Xrpl::opts
+                Xrpl::libs
+                xrpl.libxrpl
+        )
+    target_link_libraries(
+        closetime
         PRIVATE
             Xrpl::boost
             Xrpl::opts
