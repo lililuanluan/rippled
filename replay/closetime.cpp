@@ -5,6 +5,8 @@ int
 main(int argc, char** argv)
 try
 {
+    // G12T14
+    // seq 7
 }
 catch (std::exception const& e)
 {
