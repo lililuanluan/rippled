@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -97,69 +98,108 @@ struct TraceData
 namespace fs = std::filesystem;
 
 TraceData
-loadTrace(std::string const& tracePath)
+loadTrace(std::string const& tracePath, std::uint32_t targetSeq)
 {
     std::ifstream input(tracePath);
     json::Reader reader;
     json::Value root;
     reader.parse(input, root);
 
-    // 获取replay字段，这是整理好的用于replay的事件
-    auto const& replay = get(root, "replay");
-    // std::cout << replay << std::endl;
+    TraceData trace;
+    trace.targetSeq = targetSeq;
 
-    auto const& nodes = get(replay, "nodes");
-    std::vector<TraceNode> traceNodes;
-    for (auto&& node : nodes)
+    for (auto&& node : get(root, "byzantine_nodes"))
     {
-        traceNodes.emplace_back(
-            get<std::uint32_t>(node, "node"),
-            get<std::int64_t>(node, "round_start_us"),
-            get<std::int64_t>(node, "establish_us"),
-            get<std::uint32_t>(node, "prev_round_time_ms"),
-            get<std::uint32_t>(node, "prev_proposers"),
-            get<bool>(node, "initial_has_target"),
-            get<bool>(node, "expected_has_target"));
+        std::cout << "byz node: " << node.asUInt() << std::endl;
+        trace.byzantineNodes.push_back(node.asUInt());
     }
 
-    std::vector<ProposalDelivery> traceDeliveries;
-
-    auto const& deliveries = get(replay, "deliveries");
-    for (auto&& d : deliveries)
+    for (auto&& u : get(root, "unl"))
     {
-        traceDeliveries.emplace_back(
-            get<std::int64_t>(d, "at_us"),
-            get<std::uint32_t>(d, "sender"),
-            get<std::uint32_t>(d, "receiver"),
-            get<std::uint32_t>(d, "proposal_seq"),
-            get<bool>(d, "has_target"));
+        // u: node i, trusted []
+        std::vector<std::uint32_t> trusted;
+        auto const node = get(u, "node");
+        for (auto&& t : get(u, "trusted"))
+        {
+            trusted.push_back(t.asUInt());
+        }
+        trace.unl.emplace_back(node.asUInt(), std::move(trusted));
     }
 
-    std::vector<ExpectedProposal> traceExpectedProposals;
-    auto const& expProposals = get(replay, "expected_proposals");
-    for (auto&& p : expProposals)
+    auto match_seq = [&](auto&& entry) { return get<std::uint32_t>(entry, "seq") == targetSeq; };
+
+    for (auto&& node : get(root, "rounds"))
     {
-        traceExpectedProposals.emplace_back(
-            get<std::uint32_t>(p, "sender"),
-            get<std::uint32_t>(p, "proposal_seq"),
-            get<bool>(p, "has_target"));
+        if (match_seq(node))
+        {
+            trace.nodes.emplace_back(
+                get<std::uint32_t>(node, "node"),
+                get<std::int64_t>(node, "round_start_us"),
+                get<std::int64_t>(node, "establish_us"),
+                get<std::uint32_t>(node, "prev_round_time_ms"),
+                get<std::uint32_t>(node, "prev_proposers"),
+                get<std::string>(node, "initial_position_hash"),
+                get<std::int64_t>(node, "initial_close_time"),
+                get<std::int64_t>(node, "prev_close_time"));
+        }
     }
 
-    std::vector<TimerTick> traceTimerTicks;
-    auto const& ticks = get(replay, "ticks");
-    for (auto&& t : ticks)
+    for (auto&& d : get(root, "proposal_deliveries"))
     {
-        traceTimerTicks.emplace_back(
-            get<std::int64_t>(t, "at_us"),
-            get<std::uint32_t>(t, "node"),
-            get<std::uint32_t>(t, "observed_validated"));
+        if (match_seq(d))
+        {
+            trace.deliveries.emplace_back(
+                get<std::int64_t>(d, "at_us"),
+                get<std::uint32_t>(d, "sender"),
+                get<std::uint32_t>(d, "receiver"),
+                get<std::uint32_t>(d, "proposal_seq"),
+                get<std::string>(d, "position_hash"),
+                get<std::int64_t>(d, "close_time"));
+        }
     }
 
-    return TraceData{
-        std::move(traceNodes),
-        std::move(traceDeliveries),
-        std::move(traceExpectedProposals),
-        std::move(traceTimerTicks)};
+    for (auto&& m : get(root, "txset_memberships"))
+    {
+        if (match_seq(m))
+        {
+            trace.txsetMemberships.emplace_back(
+                get<std::string>(m, "txset_hash"),
+                get<std::string>(m, "tx_hash"),
+                get<bool>(m, "present"));
+        }
+    }
+
+    for (auto&& t : get(root, "timer_ticks"))
+    {
+        if (match_seq(t))
+        {
+            trace.ticks.emplace_back(
+                get<std::int64_t>(t, "at_us"),
+                get<std::uint32_t>(t, "node"),
+                get<std::uint32_t>(t, "observed_validated"));
+        }
+    }
+
+    for (auto&& acc : get(root, "accepts"))
+    {
+        if (match_seq(acc))
+        {
+            trace.accepts.emplace_back(
+                get<std::uint32_t>(acc, "node"),
+                get<std::string>(acc, "ledger_hash"),
+                get<std::string>(acc, "txset_hash"));
+        }
+    }
+
+    for (auto&& v : get(root, "validations"))
+    {
+        if (match_seq(v))
+        {
+            trace.validations.emplace_back(
+                get<std::uint32_t>(v, "node"), get<std::string>(v, "ledger_hash"));
+        }
+    }
+    return trace;
 }
 }  // namespace replay_trace
 
