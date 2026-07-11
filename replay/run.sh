@@ -96,6 +96,7 @@ for target in "${TARGETS[@]}"; do
 		exit 1
 	fi
 
-	echo " === running ${target} consensus replay ==="
+    echo ""
+	echo "=== running ${target} consensus replay ==="
 	"${BUILD_DIR}/${target}"
 done

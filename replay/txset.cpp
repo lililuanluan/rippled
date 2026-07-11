@@ -11,8 +11,9 @@
 #include <stdexcept>
 #include <string>
 
-// 现在trace支持获取所有position（=txset）的hash，以及每个position所包含的disputed transaction的hash
-// 这里要构造一个由真实position hash映射到csf的transaction set的mapping
+// The trace provides the hashes of all positions (= txsets) and the disputed
+// transaction hashes in each position.
+// Build a mapping from real position hashes to CSF transaction sets.
 std::map<std::string, TxSet>
 makePositionSets(replay_trace::TraceData const& trace)
 {
@@ -20,7 +21,8 @@ makePositionSets(replay_trace::TraceData const& trace)
     auto const disputedByPosition = trace.disputedTxByPosition();
 
     std::map<std::string, TxSet> positionSets;
-    // 如果没有membership记录，但是有多个不同的真实hash（默认有一个全0hash，以及其他真实hash），则直接报错
+    // If there are no membership records but multiple distinct real hashes
+    // (an all-zero hash and other real hashes by default), fail immediately.
     if (disputedTxs.empty() && disputedByPosition.size() > 1)
     {
         throw std::runtime_error("multiple distinct positions, but no disputed tx");
@@ -33,8 +35,8 @@ makePositionSets(replay_trace::TraceData const& trace)
         TxSetType txset;
         if (positionHash != emptyHash)
         {
-            // 找到这个position包含的disputed
-            // transactions在disputedTxs中对应的下标整数，作为csf中整数transaction，构造一个txset
+            // Find the indices of the disputed transactions in this position within disputedTxs,
+            // use those indices as integer CSF transactions, and construct a txset.
             for (auto&& txHash : txHashes)
             {
                 auto it = std::ranges::find(disputedTxs, txHash);
@@ -51,7 +53,8 @@ makePositionSets(replay_trace::TraceData const& trace)
     return positionSets;
 }
 
-// 再增加一个从真实的position hash到synthetic的disputed transaction set的TxSet::ID的映射
+// Add a mapping from a real position hash to the TxSet::ID of the synthetic
+// disputed transaction set.
 auto
 getSyntheticTxSetId(
     std::map<std::string, TxSet> const& positionSets,
@@ -80,32 +83,30 @@ check(
 
         auto const actualAccept = collector.accepts.find(who);
         if (actualAccept == collector.accepts.end() || actualAccept->second.empty())
-            throw std::runtime_error("cannot find accepted ledger for node " +
-                                     std::to_string(node.id));
+            throw std::runtime_error(
+                "cannot find accepted ledger for node " + std::to_string(node.id));
 
         Ledger const& acceptedLedger = actualAccept->second.front().ledger;
         if (TxSet::calcID(acceptedLedger.txs()) !=
             getSyntheticTxSetId(positionSets, expectedAccept->txsetHash))
         {
-            throw std::runtime_error("accepted txset does not match trace for node " +
-                                     std::to_string(node.id));
+            throw std::runtime_error(
+                "accepted txset does not match trace for node " + std::to_string(node.id));
         }
 
         std::cout << "[Accepted]\tnode " << node.id << " accepted L" << acceptedLedger.id()
                   << " txs=" << acceptedLedger.txs() << std::endl;
 
         auto const expectedValidation = std::ranges::find_if(
-            trace.validations,
-            [&](auto const& validation) { return validation.node == node.id; });
+            trace.validations, [&](auto const& validation) { return validation.node == node.id; });
         auto const actualValidation = collector.validationShares.find(who);
-        bool const hasValidation =
-            actualValidation != collector.validationShares.end() &&
+        bool const hasValidation = actualValidation != collector.validationShares.end() &&
             !actualValidation->second.empty();
         bool const expectsValidation = expectedValidation != trace.validations.end();
 
         if (hasValidation != expectsValidation)
-            throw std::runtime_error("validation presence does not match trace for node " +
-                                     std::to_string(node.id));
+            throw std::runtime_error(
+                "validation presence does not match trace for node " + std::to_string(node.id));
         if (!hasValidation)
         {
             std::cout << "[Validation]\tnode " << node.id << " didn't share validation"
@@ -113,32 +114,31 @@ check(
             continue;
         }
 
-        auto const expectedLedger = std::ranges::find_if(
-            trace.accepts,
-            [&](auto const& accept) { return accept.ledgerHash == expectedValidation->ledgerHash; });
+        auto const expectedLedger = std::ranges::find_if(trace.accepts, [&](auto const& accept) {
+            return accept.ledgerHash == expectedValidation->ledgerHash;
+        });
         if (expectedLedger == trace.accepts.end())
             throw std::runtime_error("trace validation references an unknown ledger");
 
-        Ledger::ID const validatedLedgerID =
-            actualValidation->second.front().val.ledgerID();
+        Ledger::ID const validatedLedgerID = actualValidation->second.front().val.ledgerID();
         auto const validatedLedger = acceptedLedgers.find(validatedLedgerID);
         if (validatedLedger == acceptedLedgers.end())
         {
-            throw std::runtime_error("validation references an unavailable ledger for node " +
-                                     std::to_string(node.id));
+            throw std::runtime_error(
+                "validation references an unavailable ledger for node " + std::to_string(node.id));
         }
         if (TxSet::calcID(validatedLedger->second.txs()) !=
             getSyntheticTxSetId(positionSets, expectedLedger->txsetHash))
         {
-            throw std::runtime_error("validated txset does not match trace for node " +
-                                     std::to_string(node.id));
+            throw std::runtime_error(
+                "validated txset does not match trace for node " + std::to_string(node.id));
         }
 
         std::cout << "[Validation]\tnode " << node.id << " validated L" << validatedLedgerID
                   << " txs=" << validatedLedger->second.txs() << std::endl;
     }
 
-    std::cout << "\n *** TxSet replay succeeded: final results match trace *** " << std::endl;
+    std::cout << "\n*** TxSet replay succeeded: final results match trace *** " << std::endl;
 }
 
 void
@@ -154,10 +154,11 @@ replay(replay_trace::TraceData& trace)
 
     auto peer = [&](std::uint32_t id) { return getPeerById(peersById, id); };
 
-    // 获取每个position hash对应的txset
+    // Get the txset corresponding to each position hash.
     auto positionSets = makePositionSets(trace);
 
-    // 初始化节点的previous round的事件参数，记录见过的txset省得以后再acquire，以及修改openTxs
+    // Initialize each node's previous-round parameters, record known txsets to
+    // avoid later acquisition, and update openTxs.
     for (auto const& n : trace.nodes)
     {
         Peer* p = peer(n.id);
@@ -171,7 +172,7 @@ replay(replay_trace::TraceData& trace)
         }
     }
 
-    // 这里给所有节点一个假的closetime，因为这里只关心txset
+    // Give every node a fake close time because only the txset matters here.
     auto const replayCloseTime = netTimeFromSeconds(trace.nodes.front().prevCloseTime);
 
     auto const start = sim.scheduler.now();
@@ -179,10 +180,11 @@ replay(replay_trace::TraceData& trace)
         sim.scheduler.at(start + microseconds{atUs}, std::forward<decltype(f)>(f));
     };
 
-    // 注册startround和closeledger事件
+    // Schedule the startRound and closeLedger events.
     for (auto&& n : trace.nodes)
     {
-        // id必须用值捕获，因为是后续执行的，已经出了这个循环了，n会失效
+        // Capture id by value because the callback runs after this loop and n
+        // will no longer be valid.
         scheduleAt(n.roundStartUs, [&, id = n.id]() { peer(id)->startRound(); });
         scheduleAt(n.establishUs, [&, id = n.id]() { peer(id)->fakeCloseLedger(replayCloseTime); });
     }
@@ -213,7 +215,8 @@ replay(replay_trace::TraceData& trace)
     for (auto&& tick : trace.ticks)
     {
         scheduleAt(tick.atUs, [&, tick] {
-            // 这里先检查一下已经发送validation的节点数和trace在这个tick上节点观察到的是否匹配
+            // Check whether the number of nodes that have sent validations
+            // matches what the node observed at this trace tick.
             std::set<PeerID> validatedPeers;
             for (auto&& [sender, shares] : collector.validationShares)
             {
@@ -227,7 +230,7 @@ replay(replay_trace::TraceData& trace)
                 throw std::runtime_error("not enough validations sent at this moment");
             }
 
-            // 然后调用timerentryonce，在这之前需要固定proposers finished
+            // Then call timerEntryOnce after fixing the proposers-finished count.
             auto* p = peer(tick.node);
             p->setProposersFinishedOverride(tick.observedValidated);
             p->timerEntryOnce();

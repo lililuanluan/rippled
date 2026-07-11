@@ -14,56 +14,60 @@
 
 namespace replay_trace {
 
-// 一个节点的初始状态配置
+// Initial state configuration for a node.
 struct TraceNode
 {
-    std::uint32_t id;               // id
-    std::int64_t roundStartUs;      // 进入open phase的相对时间
-    std::int64_t establishUs;       // 进入establish phase的相对时间
-    std::uint32_t prevRoundTimeMs;  // 上一轮用时
-    std::uint32_t prevProposers;    // 上一轮的proposer数，这两个传给setpreviousround
-    std::string
-        initialPositionHash;  // 节点进入establish时proposal里的txset，将这个hash插入openTxs，这样startRound()->closeLedger()之后就会propose这个。注意position=txset，不包含closetime
-    std::int64_t initialCloseTime;  // 节点进入establish时proposal里的closetime
-    std::int64_t prevCloseTime;     // 用于构建上一个ledger，ripple如果在closetime
-                                    // consensus失败到0，则会用prevCloseTime+1作为accept的closetime
+    std::uint32_t id;               // ID
+    std::int64_t roundStartUs;      // Relative time when entering the open phase
+    std::int64_t establishUs;       // Relative time when entering the establish phase
+    std::uint32_t prevRoundTimeMs;  // Duration of the previous round
+    std::uint32_t prevProposers;    // Previous-round proposer count; these two values are passed to
+                                    // setPreviousRound
+    std::string initialPositionHash;  // Txset in the proposal when the node enters establish.
+                                      // Insert this hash into openTxs so it is proposed after
+                                      // startRound()->closeLedger(). Position = txset and does not
+                                      // include close time.
+    std::int64_t initialCloseTime;    // Close time in the proposal when entering establish
+    std::int64_t prevCloseTime;       // Used to build the previous ledger. If Ripple's close-time
+                                      // consensus fails to zero, prevCloseTime + 1 is used as the
+                                      // accepted close time.
 };
 
-// 一条proposal的接收事件
+// A proposal receipt event.
 struct ProposalDelivery
 {
-    std::int64_t atUs;  // 消息送达的相对时间
+    std::int64_t atUs;  // Relative message delivery time
     std::uint32_t sender;
     std::uint32_t receiver;
-    std::uint32_t proposalSeq;  // proposal的sequence
-                                // number，这个用来在已经发送的proposal中查找用的，找不到就失败
-    // 后面这俩是 txset + closetime 这两个在proposal中的信息
+    std::uint32_t proposalSeq;  // Proposal sequence number, used to find an already emitted
+                                // proposal; fail if it cannot be found
+    // The following two fields are the txset and close-time information in the proposal.
     std::string positionHash;
     std::int64_t closeTime;
 };
 
-// 一次节点本地的 heartbeat事件，调用timerEntryOnce
+// A node-local heartbeat event that calls timerEntryOnce.
 struct TimerTick
 {
-    std::int64_t atUs;   // 时间点
-    std::uint32_t node;  // 谁的tick
-    std::uint32_t
-        observedValidated;  // UNL中，有多少节点已经在这个ledger之后工作（即已经发送了这个ledger的validation了）
+    std::int64_t atUs;                // Time point
+    std::uint32_t node;               // Node whose tick this is
+    std::uint32_t observedValidated;  // Number of UNL nodes already working beyond this ledger,
+                                      // meaning they have sent its validation
 };
 
 struct TxSetMembership
 {
     std::string txsetHash;
-    std::string txHash;  // 就是positionHash
-    bool present;        // txHash 是否在 txsetHash 对应的transaction set中
+    std::string txHash;  // The positionHash
+    bool present;        // Whether txHash is in the transaction set corresponding to txsetHash
 };
 
-// 用于最后校验的Oracle
+// Oracle used for final verification.
 struct Accept
 {
-    // 之前用TxSetMembership来记录映射，后面构造一个 fake tx -> tx的映射
-    // 这里就是通过 fake tx -> tx -> txsetHash -> ledgerHash 的映射，将最终输出的fake
-    // accept映射到真实的hash然后检查分布是否符合
+    // TxSetMembership previously recorded the mapping, then a fake tx -> tx mapping is constructed.
+    // The fake tx -> tx -> txsetHash -> ledgerHash mapping converts the final fake accepts
+    // to real hashes and checks whether their distribution matches.
     std::uint32_t node;
     std::string ledgerHash;
     std::string txsetHash;
@@ -79,25 +83,25 @@ struct Validation
 struct Unl
 {
     std::uint32_t node;
-    std::vector<std::uint32_t> trusted;  // 某个node的UNL
+    std::vector<std::uint32_t> trusted;  // A node's UNL
 };
 
 struct TraceData
 {
-    std::uint32_t targetSeq;  // 要replay哪个ledger seq
+    std::uint32_t targetSeq;  // Ledger seq to replay
     std::vector<std::uint32_t> byzantineNodes;
     std::vector<Unl> unl;
     std::vector<TraceNode> nodes;
     std::vector<ProposalDelivery> deliveries;
     std::vector<TxSetMembership> txsetMemberships;
-    std::vector<TimerTick> ticks;  // 节点的timerEntry事件
+    std::vector<TimerTick> ticks;  // Node timerEntry events
     std::vector<Accept> accepts;
     std::vector<Validation> validations;
 
     std::set<std::string>
     positionHashes() const
     {
-        // 返回所有见过的position的hash
+        // Return the hashes of all observed positions.
         std::set<std::string> hashes;
         for (auto const& n : nodes)
             hashes.insert(n.initialPositionHash);
@@ -111,8 +115,9 @@ struct TraceData
         return hashes;
     }
 
-    // 返回txsetmembership中所有的txset的集合
-    // 这里只记录的是disputed（非disputed一定在每个position中）
+    // Return the set of all txsets in txsetMemberships.
+    // Only disputed transactions are recorded here; non-disputed ones are present in every
+    // position.
     std::vector<std::string>
     disputedTransactions() const
     {
@@ -124,7 +129,7 @@ struct TraceData
         return {disputes.begin(), disputes.end()};
     }
 
-    // 获取每个positionash都包含哪些disputed transaction的hash
+    // Get the disputed transaction hashes contained in each position hash.
     auto
     disputedTxByPosition() const
     {

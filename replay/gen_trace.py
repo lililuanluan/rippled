@@ -59,9 +59,6 @@ ESTABLISH_TRANSITION = "transitioned to ConsensusPhase::establish"
 
 @dataclass
 class LogRow:
-    idx: int
-    line_no: int
-    timestamp: str
     time_us: int
     line: str
 
@@ -81,17 +78,8 @@ def parse_timestamp(timestamp: str) -> datetime:
     return dt.replace(microsecond=int(fraction), tzinfo=timezone.utc)
 
 
-def timestamp_ms(timestamp: str) -> int:
-    return int(parse_timestamp(timestamp).timestamp() * 1000)
-
-
 def timestamp_us(timestamp: str) -> int:
     return int(parse_timestamp(timestamp).timestamp() * 1_000_000)
-
-
-def timestamp(line: str) -> str | None:
-    match = TIMESTAMP_RE.match(line)
-    return None if match is None else match.group(1)
 
 
 def node_from_log(path: Path) -> int | None:
@@ -163,46 +151,38 @@ def load_network(
     raise FileNotFoundError(f"no network_input.yaml found under {case_dir}")
 
 
-def select_logs(iteration_dir: Path, *, debug: bool) -> dict[int, Path]:
-    live_dir = iteration_dir / "validator_live_logs"
-    suffix = "debug" if debug else "log"
-    out: dict[int, Path] = {}
-    if live_dir.is_dir():
-        for path in sorted(live_dir.glob(f"validator_*_{suffix}.txt")):
+def select_debug_logs(iteration_dir: Path) -> dict[int, Path]:
+    sources = (
+        (iteration_dir / "validator_live_logs", "validator_*_debug.txt"),
+        (iteration_dir / "validator_logs", "*validator_*_log.txt"),
+    )
+    for directory, pattern in sources:
+        out: dict[int, Path] = {}
+        if not directory.is_dir():
+            continue
+        for path in sorted(directory.glob(pattern)):
             node = node_from_log(path)
             if node is not None:
                 out[node] = path
-    if out:
-        return out
-
-    fallback = iteration_dir / "validator_logs"
-    if fallback.is_dir():
-        for path in sorted(fallback.glob("*validator_*_log.txt")):
-            node = node_from_log(path)
-            if node is not None:
-                out[node] = path
-    if out:
-        return out
+        if out:
+            return out
     raise FileNotFoundError(f"no validator logs found in {iteration_dir}")
 
 
-def load_node_info(iteration_dir: Path) -> tuple[dict[str, int], dict[int, dict[str, str]]]:
+def load_node_info(iteration_dir: Path) -> tuple[dict[str, int], list[int]]:
     paths = sorted(iteration_dir.glob("node_info-*.csv"))
     if not paths:
         raise FileNotFoundError(f"no node_info-*.csv found in {iteration_dir}")
 
     base58_to_node: dict[str, int] = {}
-    nodes: dict[int, dict[str, str]] = {}
+    nodes: set[int] = set()
     with paths[0].open(newline="", encoding="utf-8") as f:
         for row in csv.DictReader(f):
             node = int(row["node_id"])
             public_key = row["public_key"]
             base58_to_node[public_key] = node
-            nodes[node] = {
-                "public_key": public_key,
-                "private_key": row.get("private_key", ""),
-            }
-    return base58_to_node, nodes
+            nodes.add(node)
+    return base58_to_node, sorted(nodes)
 
 
 def load_hex_node_map(iteration_dir: Path, base58_to_node: dict[str, int]) -> dict[str, int]:
@@ -232,20 +212,12 @@ def load_hex_node_map(iteration_dir: Path, base58_to_node: dict[str, int]) -> di
 def read_timestamped_log(path: Path) -> list[LogRow]:
     rows: list[LogRow] = []
     with path.open(encoding="utf-8", errors="ignore") as f:
-        for idx, line in enumerate(f):
+        for line in f:
             line = line.rstrip("\n")
-            ts = timestamp(line)
-            if ts is None:
+            match = TIMESTAMP_RE.match(line)
+            if match is None:
                 continue
-            rows.append(
-                LogRow(
-                    idx=idx,
-                    line_no=idx + 1,
-                    timestamp=ts,
-                    time_us=timestamp_us(ts),
-                    line=line,
-                )
-            )
+            rows.append(LogRow(time_us=timestamp_us(match.group(1)), line=line))
     return rows
 
 
@@ -264,9 +236,8 @@ def close_time_seconds(value: str) -> int:
 
 
 def collect_rounds(
-    debug_logs: dict[int, Path],
-) -> tuple[dict[int, list[dict[str, Any]]], dict[int, list[LogRow]], dict[str, int]]:
-    logs = {node: read_timestamped_log(path) for node, path in sorted(debug_logs.items())}
+    logs: dict[int, list[LogRow]],
+) -> tuple[dict[int, list[dict[str, Any]]], dict[str, int]]:
     rounds_by_node: dict[int, list[dict[str, Any]]] = {}
     ledger_seq_by_hash: dict[str, int] = {}
 
@@ -281,25 +252,14 @@ def collect_rounds(
             ledger_seq_by_hash[prev_ledger] = prev_seq
             starts.append(
                 {
-                    "node": node,
                     "working_seq": prev_seq + 1,
-                    "prev_seq": prev_seq,
-                    "prev_ledger": prev_ledger,
                     "start_idx": i,
-                    "start_timestamp": row.timestamp,
                     "start_us_abs": row.time_us,
-                    "start_source": f"{debug_logs[node].name}:{row.line_no}",
-                    "current_peer_proposals": int(match.group(3)),
                     "previous_proposers": int(match.group(4)),
-                    "round_start_timestamp": row.timestamp,
                     "round_start_us_abs": row.time_us,
-                    "round_start_source": f"{debug_logs[node].name}:{row.line_no}",
-                    "establish_timestamp": row.timestamp,
                     "establish_us_abs": row.time_us,
-                    "establish_source": f"{debug_logs[node].name}:{row.line_no}",
                     "prev_round_time_ms": None,
                     "end_us_abs": None,
-                    "end_timestamp": None,
                 }
             )
 
@@ -307,19 +267,18 @@ def collect_rounds(
             next_idx = starts[idx + 1]["start_idx"] if idx + 1 < len(starts) else len(rows)
             next_us = starts[idx + 1]["start_us_abs"] if idx + 1 < len(starts) else None
             round_info["end_us_abs"] = next_us
-            round_info["end_timestamp"] = (
-                starts[idx + 1]["start_timestamp"] if idx + 1 < len(starts) else None
-            )
 
             search_begin = max(0, int(round_info["start_idx"]) - 40)
-            open_row: LogRow | None = None
-            for candidate in rows[search_begin : int(round_info["start_idx"]) + 1]:
-                if open_row is None and OPEN_TRANSITION in candidate.line:
-                    open_row = candidate
+            open_row = next(
+                (
+                    candidate
+                    for candidate in rows[search_begin : int(round_info["start_idx"]) + 1]
+                    if OPEN_TRANSITION in candidate.line
+                ),
+                None,
+            )
             if open_row is not None:
-                round_info["round_start_timestamp"] = open_row.timestamp
                 round_info["round_start_us_abs"] = open_row.time_us
-                round_info["round_start_source"] = f"{debug_logs[node].name}:{open_row.line_no}"
 
             establish_row: LogRow | None = None
             prev_round_ms: int | None = None
@@ -330,54 +289,54 @@ def collect_rounds(
                 if close_match and prev_round_ms is None:
                     prev_round_ms = int(close_match.group(1))
             if establish_row is not None:
-                round_info["establish_timestamp"] = establish_row.timestamp
                 round_info["establish_us_abs"] = establish_row.time_us
-                round_info["establish_source"] = f"{debug_logs[node].name}:{establish_row.line_no}"
             round_info["prev_round_time_ms"] = prev_round_ms
 
         rounds_by_node[node] = starts
 
-    return rounds_by_node, logs, ledger_seq_by_hash
+    return rounds_by_node, ledger_seq_by_hash
 
 
 def active_round(rounds: list[dict[str, Any]], time_us_abs: int) -> dict[str, Any] | None:
-    candidates = [
-        r
-        for r in rounds
-        if int(r["start_us_abs"]) <= time_us_abs
-        and (r.get("end_us_abs") is None or time_us_abs < int(r["end_us_abs"]))
-    ]
-    return candidates[-1] if candidates else None
+    return next(
+        (
+            row
+            for row in reversed(rounds)
+            if int(row["start_us_abs"]) <= time_us_abs
+            and (
+                row.get("end_us_abs") is None
+                or time_us_abs < int(row["end_us_abs"])
+            )
+        ),
+        None,
+    )
 
 
 def json_reader_safe(value: Any) -> Any:
-    """Keep rippled's Json::Reader from rejecting large Unix timestamps."""
+    """Keep rippled's Json::Reader from rejecting large timestamps."""
     if isinstance(value, dict):
-        out: dict[str, Any] = {}
-        for key, item in value.items():
-            if (
-                isinstance(item, int)
-                and (key.endswith("_ms") or key.endswith("_us"))
-                and abs(item) > 2_147_483_647
-            ):
-                out[key] = str(item)
-            else:
-                out[key] = json_reader_safe(item)
-        return out
+        return {
+            key: str(item)
+            if isinstance(item, int)
+            and key.endswith(("_ms", "_us"))
+            and abs(item) > 2_147_483_647
+            else json_reader_safe(item)
+            for key, item in value.items()
+        }
     if isinstance(value, list):
         return [json_reader_safe(item) for item in value]
     return value
 
 
 def collect_event_proposal_deliveries(
-    debug_logs: dict[int, Path],
+    logs: dict[int, list[LogRow]],
     *,
     ledger_seq_by_hash: dict[str, int],
     hex_to_node: dict[str, int],
 ) -> list[dict[str, Any]]:
     deliveries: list[dict[str, Any]] = []
-    for receiver, path in sorted(debug_logs.items()):
-        for row in read_timestamped_log(path):
+    for receiver, rows in sorted(logs.items()):
+        for row in rows:
             match = PROPOSAL_RE.search(row.line)
             if not match:
                 continue
@@ -417,17 +376,17 @@ def collect_event_proposal_deliveries(
 
 
 def collect_event_txset_memberships(
-    debug_logs: dict[int, Path],
+    logs: dict[int, list[LogRow]],
     *,
     rounds_by_node: dict[int, list[dict[str, Any]]],
     hex_to_node: dict[str, int],
 ) -> list[dict[str, Any]]:
     memberships: dict[tuple[int, str, str], bool] = {}
-    for receiver, path in sorted(debug_logs.items()):
+    for receiver, rows in sorted(logs.items()):
         latest_position_by_peer: dict[str, str] = {}
         pending_tx: tuple[int, str] | None = None
 
-        for row in read_timestamped_log(path):
+        for row in rows:
             proposal_match = PROPOSAL_RE.search(row.line)
             if proposal_match:
                 latest_position_by_peer[proposal_match.group(6)] = proposal_match.group(3)
@@ -585,17 +544,20 @@ def collect_event_validations(
 def build_event_trace(case_dir: Path) -> dict[str, Any]:
     case_dir = case_dir.expanduser().resolve()
     iteration_dir = resolve_iteration_dir(case_dir)
-    base58_to_node, nodes = load_node_info(iteration_dir)
-    byzantine_nodes, unl = load_network(case_dir, iteration_dir, sorted(nodes))
+    base58_to_node, node_ids = load_node_info(iteration_dir)
+    byzantine_nodes, unl = load_network(case_dir, iteration_dir, node_ids)
     hex_to_node = load_hex_node_map(iteration_dir, base58_to_node)
-    debug_logs = select_logs(iteration_dir, debug=True)
+    debug_logs = select_debug_logs(iteration_dir)
+    logs = {
+        node: read_timestamped_log(path) for node, path in sorted(debug_logs.items())
+    }
 
-    rounds_by_node, logs, ledger_seq_by_hash = collect_rounds(debug_logs)
+    rounds_by_node, ledger_seq_by_hash = collect_rounds(logs)
     deliveries = collect_event_proposal_deliveries(
-        debug_logs, ledger_seq_by_hash=ledger_seq_by_hash, hex_to_node=hex_to_node
+        logs, ledger_seq_by_hash=ledger_seq_by_hash, hex_to_node=hex_to_node
     )
     txset_memberships = collect_event_txset_memberships(
-        debug_logs, rounds_by_node=rounds_by_node, hex_to_node=hex_to_node
+        logs, rounds_by_node=rounds_by_node, hex_to_node=hex_to_node
     )
     ticks = collect_event_timer_ticks(logs, rounds_by_node)
     accepts = collect_event_accepts(logs, rounds_by_node)
@@ -677,7 +639,6 @@ def build_event_trace(case_dir: Path) -> dict[str, Any]:
         for row in validations
     ]
     return {
-        "schema": "rocket.csf_replay_events.v1",
         "byzantine_nodes": byzantine_nodes,
         "unl": unl,
         "rounds": rounds,
@@ -703,15 +664,14 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    case_dir = args.case_dir.expanduser().resolve()
     out = args.out.expanduser()
-    trace = json_reader_safe(build_event_trace(case_dir))
+    trace = json_reader_safe(build_event_trace(args.case_dir))
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(trace, indent=2, sort_keys=True), encoding="utf-8")
 
     summary = (
-        f"wrote {out}: schema={trace['schema']}, "
-        f"rounds={len(trace['rounds'])}, deliveries={len(trace['proposal_deliveries'])}, "
+        f"wrote {out}: rounds={len(trace['rounds'])}, "
+        f"deliveries={len(trace['proposal_deliveries'])}, "
         f"memberships={len(trace['txset_memberships'])}, "
         f"ticks={len(trace['timer_ticks'])}, accepts={len(trace['accepts'])}, "
         f"validations={len(trace['validations'])}"

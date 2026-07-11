@@ -39,9 +39,8 @@ operator<<(std::ostream& os, TraceNode const& node)
     return os << "TraceNode{id=" << node.id << ", roundStartUs=" << node.roundStartUs
               << ", establishUs=" << node.establishUs
               << ", prevRoundTimeMs=" << node.prevRoundTimeMs
-              << ", prevProposers=" << node.prevProposers
-              << ", initialPositionHash=\"" << node.initialPositionHash << '"'
-              << ", initialCloseTime=" << node.initialCloseTime
+              << ", prevProposers=" << node.prevProposers << ", initialPositionHash=\""
+              << node.initialPositionHash << '"' << ", initialCloseTime=" << node.initialCloseTime
               << ", prevCloseTime=" << node.prevCloseTime << '}';
 }
 
@@ -49,8 +48,7 @@ inline std::ostream&
 operator<<(std::ostream& os, ProposalDelivery const& delivery)
 {
     return os << "ProposalDelivery{atUs=" << delivery.atUs << ", sender=" << delivery.sender
-              << ", receiver=" << delivery.receiver
-              << ", proposalSeq=" << delivery.proposalSeq
+              << ", receiver=" << delivery.receiver << ", proposalSeq=" << delivery.proposalSeq
               << ", positionHash=\"" << delivery.positionHash << '"'
               << ", closeTime=" << delivery.closeTime << '}';
 }
@@ -65,9 +63,8 @@ operator<<(std::ostream& os, TimerTick const& tick)
 inline std::ostream&
 operator<<(std::ostream& os, TxSetMembership const& membership)
 {
-    return os << "TxSetMembership{txsetHash=\"" << membership.txsetHash << '"'
-              << ", txHash=\"" << membership.txHash
-              << "\", present=" << detail::boolText(membership.present) << '}';
+    return os << "TxSetMembership{txsetHash=\"" << membership.txsetHash << '"' << ", txHash=\""
+              << membership.txHash << "\", present=" << detail::boolText(membership.present) << '}';
 }
 
 inline std::ostream&
@@ -80,8 +77,8 @@ operator<<(std::ostream& os, Accept const& accept)
 inline std::ostream&
 operator<<(std::ostream& os, Validation const& validation)
 {
-    return os << "Validation{node=" << validation.node << ", ledgerHash=\""
-              << validation.ledgerHash << "\"}";
+    return os << "Validation{node=" << validation.node << ", ledgerHash=\"" << validation.ledgerHash
+              << "\"}";
 }
 
 inline std::ostream&

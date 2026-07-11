@@ -17,7 +17,7 @@
 #include <string_view>
 #include <utility>
 
-// 所有节点从同一个previous ledger开始，只replay目标seq这一轮consensus
+// All nodes start from the same previous ledger and replay only the target seq's consensus round.
 Ledger
 makeCommonLedger(Sim& sim, std::uint32_t targetSeq, std::int64_t prevCloseTime)
 {
@@ -38,7 +38,7 @@ makeCommonLedger(Sim& sim, std::uint32_t targetSeq, std::int64_t prevCloseTime)
     return ledger;
 }
 
-// CloseTime replay只需要保持不同的真实position在CSF中仍然不同
+// CloseTime replay only needs distinct real positions to remain distinct in CSF.
 std::map<std::string, TxSet>
 makePositionSets(replay_trace::TraceData const& trace)
 {
@@ -64,7 +64,8 @@ getSyntheticTxSetId(
     return positionSets.at(tracePositionHash).id();
 }
 
-// 真实ledger hash和CSF ledger ID不同，只比较各节点是否落在相同的ledger分支
+// Real ledger hashes differ from CSF ledger IDs, so only compare whether nodes end up on the same
+// ledger branches.
 void
 checkBranches(
     std::vector<replay_trace::TraceNode> const& nodes,
@@ -166,7 +167,7 @@ check(ReplayCollector const& collector, replay_trace::TraceData const& trace)
     checkBranches(trace.nodes, actualAccepts, expectedAccepts, "accept");
     checkBranches(trace.nodes, actualValidations, expectedValidations, "validation");
 
-    std::cout << "\n *** CloseTime replay succeeded: final results match trace *** " << std::endl;
+    std::cout << "\n*** CloseTime replay succeeded: final results match trace *** " << std::endl;
 }
 
 void

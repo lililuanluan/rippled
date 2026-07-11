@@ -864,7 +864,8 @@ struct Peer
     //--------------------------------------------------------------------------
     // Simulation "driver" members
 
-    // 只调用一次hearbeat，不预订下一次，下一次通过外部手动指定
+    // Call the heartbeat only once without scheduling the next one; the next
+    // call is specified externally.
     void
     timerEntryOnce()
     {

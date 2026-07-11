@@ -69,7 +69,7 @@ struct ReplayCollector
         if (it == proposalShares.end())
             return nullptr;
 
-        // 在sender发送的proposal中找到seq和position匹配的proposal
+        // Find a proposal from the sender with a matching seq and position.
         for (auto&& shared : it->second)
         {
             auto const& p = shared.val;
@@ -105,7 +105,7 @@ struct ReplayCollector
     }
 };
 
-// 获取一个用id做下标的Peer*指针数组
+// Build an array of Peer pointers indexed by ID.
 std::vector<Peer*>
 peerById(PeerGroup const& peers)
 {
