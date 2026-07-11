@@ -7,6 +7,28 @@ REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 BUILD_DIR="${REPO_ROOT}/.build-csf"
 VENV_ACTIVATE="${REPO_ROOT}/.venv/bin/activate"
 
+usage() {
+	echo "Usage: $0 [txset|closetime]" >&2
+}
+
+if [[ $# -gt 1 ]]; then
+	usage
+	exit 2
+fi
+
+case "${1:-}" in
+"")
+	TARGETS=(txset closetime)
+	;;
+txset | closetime)
+	TARGETS=("$1")
+	;;
+*)
+	usage
+	exit 2
+	;;
+esac
+
 if [[ "$(uname -s)" == "Darwin" ]]; then
 	export CC="$(xcrun --find clang)"
 	export CXX="$(xcrun --find clang++)"
@@ -30,10 +52,18 @@ conan config install "${REPO_ROOT}/conan/profiles/" \
 conan remote add --index 0 --force xrplf \
 	https://conan.ripplex.io
 
-cd "${SCRIPT_DIR}"
-# python3 gen_trace.py G12T14 G12T14_trace.json
-# python3 gen_trace.py G53T17 G53T17_trace.json
-cd -
+for target in "${TARGETS[@]}"; do
+	case "${target}" in
+	txset)
+		python3 "${SCRIPT_DIR}/gen_trace.py" \
+			"${SCRIPT_DIR}/G53T17" "${SCRIPT_DIR}/G53T17_trace.json"
+		;;
+	closetime)
+		python3 "${SCRIPT_DIR}/gen_trace.py" \
+			"${SCRIPT_DIR}/G12T14" "${SCRIPT_DIR}/G12T14_trace.json"
+		;;
+	esac
+done
 
 JOBS=40
 
@@ -54,17 +84,18 @@ cmake -S "${REPO_ROOT}" -B "${BUILD_DIR}" \
 
 ln -sf "${BUILD_DIR}/compile_commands.json" "${REPO_ROOT}/compile_commands.json"
 
-cmake --build "${BUILD_DIR}" --config Release --target txset --parallel "${JOBS}"
-cmake --build "${BUILD_DIR}" --config Release --target closetime --parallel "${JOBS}"
+for target in "${TARGETS[@]}"; do
+	cmake --build "${BUILD_DIR}" --config Release --target "${target}" --parallel "${JOBS}"
+done
 
 cd "${REPO_ROOT}"
 
-if [[ -x "${BUILD_DIR}/txset" ]]; then
-	echo " === running txset consensus replay ==="
-	"${BUILD_DIR}/txset"
-fi
+for target in "${TARGETS[@]}"; do
+	if [[ ! -x "${BUILD_DIR}/${target}" ]]; then
+		echo "ERROR: missing replay executable: ${BUILD_DIR}/${target}" >&2
+		exit 1
+	fi
 
-if [[ -x "${BUILD_DIR}/closetime" ]]; then
-	echo " === running closetime consensus replay ==="
-	# "${BUILD_DIR}/closetime"
-fi
+	echo " === running ${target} consensus replay ==="
+	"${BUILD_DIR}/${target}"
+done

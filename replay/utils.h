@@ -80,6 +80,29 @@ struct ReplayCollector
         }
         return nullptr;
     }
+
+    Proposal const*
+    findEmittedProposal(
+        PeerID sender,
+        std::uint32_t proposalSeq,
+        TxSet::ID const& position,
+        xrpl::NetClock::time_point const& closeTime) const
+    {
+        auto it = proposalShares.find(sender);
+        if (it == proposalShares.end())
+            return nullptr;
+
+        for (auto const& shared : it->second)
+        {
+            auto const& p = shared.val;
+            if (p.proposeSeq() == proposalSeq && p.position() == position &&
+                p.closeTime() == closeTime)
+            {
+                return &p;
+            }
+        }
+        return nullptr;
+    }
 };
 
 // 获取一个用id做下标的Peer*指针数组
