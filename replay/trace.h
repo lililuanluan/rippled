@@ -54,8 +54,8 @@ struct TimerTick
 struct TxSetMembership
 {
     std::string txsetHash;
-    std::string txHash;
-    bool present;  // txHash 是否在 txsetHash 对应的transaction set中
+    std::string txHash;  // 就是positionHash
+    bool present;        // txHash 是否在 txsetHash 对应的transaction set中
 };
 
 // 用于最后校验的Oracle
@@ -93,6 +93,56 @@ struct TraceData
     std::vector<TimerTick> ticks;  // 节点的timerEntry事件
     std::vector<Accept> accepts;
     std::vector<Validation> validations;
+
+    std::set<std::string>
+    positionHashes() const
+    {
+        // 返回所有见过的position的hash
+        std::set<std::string> hashes;
+        for (auto const& n : nodes)
+            hashes.insert(n.initialPositionHash);
+        for (auto const& d : deliveries)
+            hashes.insert(d.positionHash);
+        for (auto const& acc : accepts)
+            hashes.insert(acc.txsetHash);
+        for (auto const& mem : txsetMemberships)
+            hashes.insert(mem.txsetHash);
+
+        return hashes;
+    }
+
+    // 返回txsetmembership中所有的txset的集合
+    // 这里只记录的是disputed（非disputed一定在每个position中）
+    std::vector<std::string>
+    disputedTransactions() const
+    {
+        std::set<std::string> disputes;
+        for (auto&& mem : txsetMemberships)
+        {
+            disputes.insert(mem.txHash);
+        }
+        return {disputes.begin(), disputes.end()};
+    }
+
+    // 获取每个positionash都包含哪些disputed transaction的hash
+    auto
+    disputedTxByPosition() const
+    {
+        std::map<std::string, std::set<std::string>> res;  // position hash -> {tx hash}
+        for (auto const& h : positionHashes())
+        {
+            res[h] = {};
+        }
+
+        for (auto&& mem : txsetMemberships)
+        {
+            if (mem.present)
+            {
+                res[mem.txsetHash].insert(mem.txHash);
+            }
+        }
+        return res;
+    }
 };
 
 namespace fs = std::filesystem;
@@ -101,6 +151,8 @@ TraceData
 loadTrace(std::string const& tracePath, std::uint32_t targetSeq)
 {
     std::ifstream input(tracePath);
+    if (!input)
+        throw std::runtime_error("cannot open trace file: " + tracePath);
     json::Reader reader;
     json::Value root;
     reader.parse(input, root);
@@ -110,7 +162,6 @@ loadTrace(std::string const& tracePath, std::uint32_t targetSeq)
 
     for (auto&& node : get(root, "byzantine_nodes"))
     {
-        std::cout << "byz node: " << node.asUInt() << std::endl;
         trace.byzantineNodes.push_back(node.asUInt());
     }
 
