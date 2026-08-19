@@ -162,6 +162,13 @@ if(csf)
         src/xrpld/consensus/Consensus.cpp
     )
 
+    add_executable(txset_search
+        search/txset_search.cpp
+        src/test/csf/impl/Sim.cpp
+        src/test/csf/impl/ledgers.cpp
+        src/xrpld/consensus/Consensus.cpp
+    )
+
     target_include_directories(
         txset
         PRIVATE
@@ -173,6 +180,13 @@ if(csf)
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/src
     )
+
+    target_include_directories(
+        txset_search
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+
     target_link_libraries(
             txset
             PRIVATE
@@ -183,10 +197,19 @@ if(csf)
         )
     target_link_libraries(
         closetime
-        PRIVATE
-            Xrpl::boost
-            Xrpl::opts
-            Xrpl::libs
-            xrpl.libxrpl
+            PRIVATE
+                Xrpl::boost
+                Xrpl::opts
+                Xrpl::libs
+                xrpl.libxrpl
+    )
+
+    target_link_libraries(
+            txset_search
+            PRIVATE
+                Xrpl::boost
+                Xrpl::opts
+                Xrpl::libs
+                xrpl.libxrpl
     )
 endif()
